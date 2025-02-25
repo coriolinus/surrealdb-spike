@@ -1,0 +1,3 @@
+/target
+/ffi/bindings
+!/ffi/bindings/python/cli.py
