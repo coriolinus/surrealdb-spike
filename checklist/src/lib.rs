@@ -22,8 +22,6 @@ pub enum Error {
     FailedCreate { resource: &'static str },
     #[error("updating a {resource} did not return an instance of that resource")]
     FailedUpdate { resource: &'static str },
-    #[error("a live {resource} had an unset id field")]
-    MissingId { resource: &'static str },
 }
 
 impl Error {
@@ -138,24 +136,25 @@ impl TryFrom<RecordId> for ChecklistId {
     }
 }
 
+#[derive(Debug, serde::Serialize)]
+struct InsertChecklist {
+    pub name: Cow<'static, str>,
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Checklist {
-    pub id: Option<ChecklistId>,
+    pub id: ChecklistId,
     pub name: Cow<'static, str>,
     pub items: Vec<ItemId>,
 }
 
 impl Checklist {
     pub async fn new(db: &Db, name: impl Into<Cow<'static, str>>) -> Result<Self> {
-        let id = None;
         let name = name.into();
-        let items = Vec::new();
-
-        let checklist = Self { id, name, items };
 
         db.inner
             .create(CHECKLIST_TABLE)
-            .content(checklist)
+            .content(InsertChecklist { name })
             .await
             .map_err(Error::surreal("creating checklist"))?
             .ok_or(Error::FailedCreate {
@@ -188,9 +187,7 @@ impl Checklist {
     }
 
     pub async fn items(&self, db: &Db) -> Result<Vec<Item>> {
-        let id = self.id.clone().ok_or(Error::MissingId {
-            resource: CHECKLIST_TABLE,
-        })?;
+        let id = self.id.clone();
         let fresh = Self::load(db, id).await?.ok_or(Error::MissingItem)?;
         try_join_all(fresh.items.into_iter().map(|id| {
             Item::load(db, id).and_then(async |maybe_item| maybe_item.ok_or(Error::MissingItem))
@@ -247,12 +244,22 @@ impl TryFrom<RecordId> for ItemId {
     }
 }
 
+#[derive(Debug, serde::Serialize)]
+struct InsertItem {
+    checklist: ChecklistId,
+    item: Cow<'static, str>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct CheckedItem {
+    checked: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Item {
-    pub id: Option<ItemId>,
+    pub id: ItemId,
     pub checklist: ChecklistId,
     pub item: Cow<'static, str>,
-    checked: bool,
 }
 
 impl Item {
@@ -261,16 +268,9 @@ impl Item {
         checklist: ChecklistId,
         item: impl Into<Cow<'static, str>>,
     ) -> Result<Self> {
-        let id = None;
         let item = item.into();
-        let checked = false;
 
-        let item = Self {
-            id,
-            checklist,
-            item,
-            checked,
-        };
+        let item = InsertItem { checklist, item };
 
         db.inner
             .create(ITEM_TABLE)
@@ -300,24 +300,19 @@ impl Item {
     }
 
     pub async fn is_set(&self, db: &Db) -> Result<bool> {
-        let id = self.id.clone().ok_or(Error::MissingId {
-            resource: ITEM_TABLE,
-        })?;
-        Self::load(db, id)
+        let id = RecordId::from(self.id.clone());
+        db.inner
+            .select::<Option<CheckedItem>>(id)
             .await
             .map(|maybe_item| maybe_item.is_some_and(|item| item.checked))
+            .map_err(Error::surreal("reading item checked status"))
     }
 
-    pub async fn set_checked(&mut self, db: &Db, checked: bool) -> Result<()> {
-        let id = RecordId::from(self.id.clone().ok_or(Error::MissingId {
-            resource: ITEM_TABLE,
-        })?);
-
-        self.checked = checked;
-
+    pub async fn set_checked(&self, db: &Db, checked: bool) -> Result<()> {
+        let id = RecordId::from(self.id.clone());
         db.inner
             .update::<Option<Self>>(id)
-            .content(self.clone())
+            .merge(CheckedItem { checked })
             .await
             .map_err(Error::surreal("updating checked item"))?
             .ok_or(Error::FailedUpdate {

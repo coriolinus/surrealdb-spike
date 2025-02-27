@@ -103,12 +103,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn show_checklist(Checklist { id, name, .. }: &Checklist) {
-    let id = id.as_ref().expect("all checklists should have an id");
     cprintln!("<dim>{id:>6}:</dim> {name}")
 }
 
 fn show_item(Item { id, item, .. }: &Item, checked: bool) {
-    let id = id.as_ref().expect("all items should have an id");
     if checked {
         cprintln!("<dim>{id:>6}:</dim> ☑ <strike>{item}</strike>");
     } else {
