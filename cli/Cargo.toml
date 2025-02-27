@@ -1,0 +1,17 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.95"
+bytes = "1.10.0"
+checklist = { version = "0.1.0", path = "../checklist" }
+clap = { version = "4.5.28", features = ["derive"] }
+color-print = "0.3.7"
+dirs = "6.0.0"
+tokio = { version = "1.43.0", features = ["full"] }
+
+[[bin]]
+name = "checklist"
+path = "src/main.rs"
