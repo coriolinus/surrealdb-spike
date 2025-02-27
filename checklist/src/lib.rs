@@ -187,12 +187,13 @@ impl Checklist {
         Ok(())
     }
 
-    // note that this operates on the instance!
-    // use caution if you have not loaded this instance recently;
-    // it is possible that items have been created or deleted in the interim
     pub async fn items(&self, db: &Db) -> Result<Vec<Item>> {
-        try_join_all(self.items.iter().cloned().map(|id| {
-            Item::load(db, id).and_then(|maybe_item| async { maybe_item.ok_or(Error::MissingItem) })
+        let id = self.id.clone().ok_or(Error::MissingId {
+            resource: CHECKLIST_TABLE,
+        })?;
+        let fresh = Self::load(db, id).await?.ok_or(Error::MissingItem)?;
+        try_join_all(fresh.items.into_iter().map(|id| {
+            Item::load(db, id).and_then(async |maybe_item| maybe_item.ok_or(Error::MissingItem))
         }))
         .await
     }
